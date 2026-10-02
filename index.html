@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genetic Algorithm Visual Demo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+<div class="max-w-4xl mx-auto p-4">
+  <h1 class="text-3xl font-bold text-center text-emerald-400 mb-1">🧬 Genetic Algorithm Visual Demo</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">Watch evolution find the target string through selection, crossover & mutation</p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <!-- Controls -->
+    <div class="space-y-4">
+      <div class="bg-gray-800 rounded-2xl p-4 space-y-3">
+        <h2 class="font-bold text-gray-300">Configuration</h2>
+        <div>
+          <label for="target" class="block text-xs text-gray-400 mb-1">Target String</label>
+          <input type="text" id="target" value="HELLO WORLD" maxlength="20"
+            class="w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 uppercase"
+            aria-label="Target string"
+            oninput="this.value = this.value.toUpperCase()">
+          <div class="text-xs text-gray-500 mt-1">Letters, spaces, numbers only</div>
+        </div>
+        <div>
+          <label for="pop-size" class="block text-xs text-gray-400 mb-1">Population: <span id="pop-val">100</span></label>
+          <input type="range" id="pop-size" min="20" max="500" step="10" value="100" class="w-full accent-emerald-500" aria-label="Population size">
+        </div>
+        <div>
+          <label for="mut-rate" class="block text-xs text-gray-400 mb-1">Mutation Rate: <span id="mut-val">1.0</span>%</label>
+          <input type="range" id="mut-rate" min="0.1" max="10" step="0.1" value="1" class="w-full accent-emerald-500" aria-label="Mutation rate">
+        </div>
+        <div>
+          <label for="elite-size" class="block text-xs text-gray-400 mb-1">Elitism: <span id="elite-val">10</span>%</label>
+          <input type="range" id="elite-size" min="0" max="50" step="5" value="10" class="w-full accent-emerald-500" aria-label="Elite percentage">
+        </div>
+      </div>
+
+      <div class="bg-gray-800 rounded-2xl p-4">
+        <h2 class="font-bold text-gray-300 mb-3">Control</h2>
+        <div class="flex flex-col gap-2">
+          <button onclick="startGA()" id="start-btn" class="w-full py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-500 transition" aria-label="Start genetic algorithm">▶ Start</button>
+          <button onclick="stopGA()" class="w-full py-2 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition" aria-label="Stop algorithm">⏹ Stop</button>
+          <button onclick="stepGA()" class="w-full py-2 bg-blue-700 text-white rounded-lg font-semibold hover:bg-blue-600 transition" aria-label="Single step">⏭ Step</button>
+        </div>
+        <div>
+          <label for="anim-speed" class="block text-xs text-gray-400 mb-1 mt-3">Speed: <span id="speed-val">50</span>gen/s</label>
+          <input type="range" id="anim-speed" min="1" max="200" value="50" class="w-full accent-emerald-500" aria-label="Animation speed">
+        </div>
+      </div>
+
+      <div class="bg-gray-800 rounded-2xl p-4">
+        <h2 class="font-bold text-gray-300 mb-2">Stats</h2>
+        <div class="space-y-1 text-sm">
+          <div class="flex justify-between"><span class="text-gray-400">Generation:</span><span id="gen-num" class="text-emerald-400 font-bold tabular-nums">0</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">Best Fitness:</span><span id="best-fit" class="text-yellow-400 font-bold tabular-nums">0%</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">Avg Fitness:</span><span id="avg-fit" class="text-gray-300 tabular-nums">0%</span></div>
+          <div class="flex justify-between"><span class="text-gray-400">Solved:</span><span id="solved-gen" class="text-green-400 tabular-nums">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visualization -->
+    <div class="lg:col-span-2 space-y-4">
+      <!-- Best individual -->
+      <div class="bg-gray-800 rounded-2xl p-4">
+        <div class="text-xs text-gray-400 mb-2 font-semibold">BEST INDIVIDUAL</div>
+        <div id="best-individual" class="font-mono text-2xl tracking-widest min-h-8 flex flex-wrap gap-1"></div>
+        <div class="mt-2 bg-gray-700 rounded-full h-3 overflow-hidden">
+          <div id="fitness-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-200" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Fitness chart -->
+      <div class="bg-gray-800 rounded-2xl p-4">
+        <div class="text-xs text-gray-400 mb-2 font-semibold">FITNESS HISTORY</div>
+        <canvas id="chart" width="460" height="160" class="w-full rounded-lg bg-gray-900" aria-label="Fitness history chart"></canvas>
+      </div>
+
+      <!-- Population sample -->
+      <div class="bg-gray-800 rounded-2xl p-4">
+        <div class="text-xs text-gray-400 mb-2 font-semibold">POPULATION SAMPLE (Top 10)</div>
+        <div id="pop-display" class="space-y-1 font-mono text-xs"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ';
+
+let population = [];
+let target = '';
+let generation = 0;
+let running = false;
+let timer = null;
+let bestHistory = [];
+let avgHistory = [];
+let solved = false;
+let solvedGen = -1;
+
+function randChar() { return CHARS[Math.floor(Math.random() * CHARS.length)]; }
+function randIndividual(len) { return Array.from({length: len}, randChar).join(''); }
+function fitness(ind) {
+  let score = 0;
+  for (let i = 0; i < target.length; i++) {
+    if (ind[i] === target[i]) score++;
+  }
+  return score / target.length;
+}
+
+function initPopulation() {
+  target = document.getElementById('target').value.toUpperCase() || 'HELLO WORLD';
+  const popSize = parseInt(document.getElementById('pop-size').value);
+  population = Array.from({length: popSize}, () => ({
+    genes: randIndividual(target.length),
+    fit: 0
+  }));
+  evaluateFitness();
+  generation = 0;
+  bestHistory = [];
+  avgHistory = [];
+  solved = false;
+  solvedGen = -1;
+  document.getElementById('solved-gen').textContent = '—';
+  document.getElementById('gen-num').textContent = 0;
+  drawChart();
+  renderPopulation();
+}
+
+function evaluateFitness() {
+  population.forEach(ind => { ind.fit = fitness(ind.genes); });
+  population.sort((a, b) => b.fit - a.fit);
+}
+
+function select() {
+  // Tournament selection
+  const a = population[Math.floor(Math.random() * Math.min(population.length, 20))];
+  const b = population[Math.floor(Math.random() * Math.min(population.length, 20))];
+  return a.fit >= b.fit ? a : b;
+}
+
+function crossover(a, b) {
+  const pt1 = Math.floor(Math.random() * target.length);
+  const pt2 = Math.floor(Math.random() * target.length);
+  const s = Math.min(pt1, pt2);
+  const e = Math.max(pt1, pt2);
+  return a.genes.slice(0, s) + b.genes.slice(s, e) + a.genes.slice(e);
+}
+
+function mutate(genes) {
+  const rate = parseFloat(document.getElementById('mut-rate').value) / 100;
+  return genes.split('').map(c => Math.random() < rate ? randChar() : c).join('');
+}
+
+function nextGeneration() {
+  if (solved) return;
+  const elitePct = parseInt(document.getElementById('elite-size').value) / 100;
+  const eliteCount = Math.max(1, Math.floor(population.length * elitePct));
+  const newPop = population.slice(0, eliteCount).map(ind => ({genes: ind.genes, fit: ind.fit}));
+
+  while (newPop.length < population.length) {
+    const p1 = select();
+    const p2 = select();
+    const child = mutate(crossover(p1, p2));
+    newPop.push({ genes: child, fit: 0 });
+  }
+
+  population = newPop;
+  evaluateFitness();
+  generation++;
+
+  const best = population[0].fit;
+  const avg = population.reduce((s, i) => s + i.fit, 0) / population.length;
+  bestHistory.push(best);
+  avgHistory.push(avg);
+
+  if (best >= 1 && !solved) {
+    solved = true;
+    solvedGen = generation;
+    document.getElementById('solved-gen').textContent = generation;
+    stopGA();
+  }
+  updateUI();
+}
+
+function updateUI() {
+  const best = population[0];
+  const avg = population.reduce((s, i) => s + i.fit, 0) / population.length;
+
+  document.getElementById('gen-num').textContent = generation;
+  document.getElementById('best-fit').textContent = (best.fit * 100).toFixed(1) + '%';
+  document.getElementById('avg-fit').textContent = (avg * 100).toFixed(1) + '%';
+  document.getElementById('fitness-bar').style.width = (best.fit * 100) + '%';
+
+  renderBestIndividual(best.genes);
+  renderPopulation();
+  drawChart();
+}
+
+function renderBestIndividual(genes) {
+  const el = document.getElementById('best-individual');
+  el.innerHTML = '';
+  for (let i = 0; i < genes.length; i++) {
+    const span = document.createElement('span');
+    span.textContent = genes[i];
+    span.className = genes[i] === target[i]
+      ? 'text-green-400 font-bold'
+      : 'text-red-400';
+    el.appendChild(span);
+  }
+}
+
+function renderPopulation() {
+  const el = document.getElementById('pop-display');
+  el.innerHTML = '';
+  population.slice(0, 10).forEach((ind, idx) => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2';
+    const rankEl = document.createElement('span');
+    rankEl.className = 'text-gray-500 w-4';
+    rankEl.textContent = (idx + 1) + '.';
+    const genesEl = document.createElement('span');
+    genesEl.className = 'flex-1 tracking-wide';
+    genesEl.innerHTML = '';
+    for (let i = 0; i < ind.genes.length; i++) {
+      const c = document.createElement('span');
+      c.textContent = ind.genes[i];
+      c.style.color = ind.genes[i] === target[i] ? '#4ade80' : '#9ca3af';
+      genesEl.appendChild(c);
+    }
+    const fitEl = document.createElement('span');
+    fitEl.className = 'text-emerald-400 w-10 text-right';
+    fitEl.textContent = (ind.fit * 100).toFixed(0) + '%';
+    row.appendChild(rankEl);
+    row.appendChild(genesEl);
+    row.appendChild(fitEl);
+    el.appendChild(row);
+  });
+}
+
+function drawChart() {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  const maxGen = Math.max(bestHistory.length, 50);
+  const xScale = W / maxGen;
+
+  // Grid
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = H - (i / 4) * H;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+    ctx.fillStyle = '#4b5563';
+    ctx.font = '9px sans-serif';
+    ctx.fillText((i * 25) + '%', 2, y - 2);
+  }
+
+  // Avg line
+  if (avgHistory.length > 1) {
+    ctx.beginPath();
+    avgHistory.forEach((v, i) => {
+      const x = i * xScale;
+      const y = H - v * H;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // Best line
+  if (bestHistory.length > 1) {
+    ctx.beginPath();
+    bestHistory.forEach((v, i) => {
+      const x = i * xScale;
+      const y = H - v * H;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Legend
+  ctx.fillStyle = '#10b981';
+  ctx.fillRect(W - 100, 6, 12, 3);
+  ctx.fillStyle = '#d1d5db';
+  ctx.font = '10px sans-serif';
+  ctx.fillText('Best', W - 85, 12);
+  ctx.fillStyle = '#3b82f6';
+  ctx.fillRect(W - 40, 6, 12, 3);
+  ctx.fillStyle = '#d1d5db';
+  ctx.fillText('Avg', W - 25, 12);
+}
+
+function startGA() {
+  if (running) return;
+  initPopulation();
+  running = true;
+  document.getElementById('start-btn').textContent = '⟳ Running...';
+  runLoop();
+}
+
+function runLoop() {
+  if (!running) return;
+  const speed = parseInt(document.getElementById('anim-speed').value);
+  const delay = Math.max(1, Math.round(1000 / speed));
+  timer = setTimeout(() => {
+    if (!running) return;
+    const batchSize = speed > 50 ? Math.ceil(speed / 10) : 1;
+    for (let i = 0; i < batchSize && running && !solved; i++) {
+      nextGeneration();
+    }
+    if (!solved && running) runLoop();
+  }, delay);
+}
+
+function stopGA() {
+  running = false;
+  clearTimeout(timer);
+  document.getElementById('start-btn').textContent = '▶ Start';
+}
+
+function stepGA() {
+  stopGA();
+  if (population.length === 0) initPopulation();
+  nextGeneration();
+}
+
+// Bind sliders
+document.getElementById('pop-size').addEventListener('input', function() {
+  document.getElementById('pop-val').textContent = this.value;
+});
+document.getElementById('mut-rate').addEventListener('input', function() {
+  document.getElementById('mut-val').textContent = parseFloat(this.value).toFixed(1);
+});
+document.getElementById('elite-size').addEventListener('input', function() {
+  document.getElementById('elite-val').textContent = this.value;
+});
+document.getElementById('anim-speed').addEventListener('input', function() {
+  document.getElementById('speed-val').textContent = this.value;
+});
+
+// Init on load
+initPopulation();
+updateUI();
+</script>
+</body>
+</html>
